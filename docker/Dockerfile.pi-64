@@ -1,0 +1,44 @@
+FROM debian
+
+RUN apt-get update && apt-get upgrade -y
+
+RUN apt-get install -y \
+    git \
+    subversion
+
+RUN mkdir /mount-after
+WORKDIR /mount-after
+
+RUN git clone --depth=1 https://github.com/raspberrypi/linux.git
+RUN svn export https://github.com/raspberrypi/firmware/trunk/boot
+RUN rm -v boot/kernel* boot/*.dtb boot/overlays/*.dtbo
+
+RUN apt-get install -y \
+    binutils-aarch64-linux-gnu \
+    gcc-aarch64-linux-gnu \
+    build-essential \
+    flex \
+    bison \
+    lsb-release \
+    bc \
+    rsync \
+    kmod \
+    cpio \
+    libssl-dev
+
+WORKDIR /mount-after/linux
+ENV ARCH arm64
+ENV CROSS_COMPILE=aarch64-linux-gnu-
+RUN make bcm2711_defconfig
+RUN make -j$([ `nproc` -gt 4 ] && echo $(( `nproc` - 4 )) || echo 2) \
+    CXXFLAGS="-march=armv8-a+crc -mtune=cortex-a72" \
+    CFLAGS="-march=armv8-a+crc -mtune=cortex-a72" \
+    bindeb-pkg
+WORKDIR /mount-after
+RUN cp -v linux/arch/arm64/boot/Image boot/kernel8.img
+RUN cp -v linux/arch/arm64/boot/dts/overlays/*.dtbo boot/overlays
+RUN cp -v linux/arch/arm64/boot/dts/broadcom/*.dtb boot
+
+ADD runme.sh /root
+
+CMD [ "/root/runme.sh" ]
